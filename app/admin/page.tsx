@@ -143,6 +143,18 @@ export default function AdminPage() {
     setExpanded(null)
   }
 
+  async function softLogoutAll() {
+    // Boots all users (deletes members so their session breaks) but keeps
+    // teams + scores visible on the leaderboard for the next group to see
+    setBusy('force_logout')
+    await supabase.from('soc_members').delete().neq('id', '')
+    await supabase.from('soc_teams').update({ started_at: null }).neq('id', '')
+    await fetchAll()
+    setBusy(null)
+    setConfirm(null)
+    setExpanded(null)
+  }
+
   useEffect(() => {
     if (!authed) return
     fetchAll()
@@ -279,7 +291,7 @@ export default function AdminPage() {
             <div className="h-6 border-l border-slate-700" />
             <button
               onClick={() => setConfirm({
-                label: 'Force logout ALL teams? This permanently deletes all teams, members, progress and alerts.',
+                label: '__logout__',
                 action: forceLogoutAll,
               })}
               disabled={busy === 'force_logout'}
@@ -570,19 +582,52 @@ export default function AdminPage() {
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="rounded-lg border p-6 w-full max-w-sm space-y-4 shadow-2xl"
               style={{ backgroundColor: '#0f2340', borderColor: '#1B3A6B' }}>
-              <p className="text-sm font-mono text-white">{confirm.label}</p>
-              <p className="text-xs font-mono text-slate-400">This cannot be undone.</p>
-              <div className="flex gap-3">
-                <button onClick={() => setConfirm(null)}
-                  className="flex-1 py-2 rounded border border-slate-600 text-slate-400 text-sm font-mono hover:border-slate-400 transition-all">
-                  Cancel
-                </button>
-                <button onClick={async () => { await confirm.action() }}
-                  className="flex-1 py-2 rounded text-sm font-mono font-bold"
-                  style={{ backgroundColor: '#dc2626', color: '#fff' }}>
-                  Confirm
-                </button>
-              </div>
+              {confirm.label === '__logout__' ? (
+                <>
+                  <p className="text-sm font-bold text-white">Force logout all teams?</p>
+                  <div className="space-y-2">
+                    <div className="rounded border border-yellow-800 bg-yellow-900/10 p-3">
+                      <p className="text-xs font-bold text-yellow-300 font-mono mb-1">Keep Scores</p>
+                      <p className="text-xs text-slate-400">Boots all users (they must log in again) but keeps team names and scores visible on the leaderboard. Good for showing results to the next group.</p>
+                    </div>
+                    <div className="rounded border border-red-900 bg-red-900/10 p-3">
+                      <p className="text-xs font-bold text-red-400 font-mono mb-1">Full Wipe</p>
+                      <p className="text-xs text-slate-400">Deletes everything — teams, scores, members, alerts. Clean slate for a completely fresh session.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button onClick={() => setConfirm(null)}
+                      className="w-full py-2 rounded border border-slate-600 text-slate-400 text-sm font-mono hover:border-slate-400 transition-all">
+                      Cancel
+                    </button>
+                    <button onClick={softLogoutAll}
+                      className="w-full py-2 rounded text-sm font-mono font-bold border border-yellow-700 text-yellow-300 hover:bg-yellow-900/20 transition-all">
+                      Keep Scores — Boot Users
+                    </button>
+                    <button onClick={forceLogoutAll}
+                      className="w-full py-2 rounded text-sm font-mono font-bold"
+                      style={{ backgroundColor: '#dc2626', color: '#fff' }}>
+                      Full Wipe — Delete Everything
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-mono text-white">{confirm.label}</p>
+                  <p className="text-xs font-mono text-slate-400">This cannot be undone.</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setConfirm(null)}
+                      className="flex-1 py-2 rounded border border-slate-600 text-slate-400 text-sm font-mono hover:border-slate-400 transition-all">
+                      Cancel
+                    </button>
+                    <button onClick={async () => { await confirm.action() }}
+                      className="flex-1 py-2 rounded text-sm font-mono font-bold"
+                      style={{ backgroundColor: '#dc2626', color: '#fff' }}>
+                      Confirm
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </>
