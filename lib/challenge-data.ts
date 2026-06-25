@@ -2,6 +2,16 @@ export type TaskType = 'multiple_choice' | 'free_text' | 'external_lookup'
 export type TaskCategory = 'network' | 'email' | 'osint' | 'files' | 'response' | 'threat_intel'
 export type TaskStage = 1 | 2 | 3
 
+export interface TaskTutorial {
+  toolName: string
+  whatItIs: string
+  whySocUseIt: string
+  steps: string[]
+  lookFor: string[]
+  lookupLabel: string   // label shown above the "what to enter" box
+  lookupValue: string   // the value students must find from evidence and type in themselves
+}
+
 export interface Task {
   id: string
   stage: TaskStage
@@ -13,6 +23,7 @@ export interface Task {
   type: TaskType
   description: string
   evidence: { label: string; rows: { cols: string[]; highlight?: boolean }[] } | null
+  tutorial?: TaskTutorial
   hints: string[]
   resource?: { label: string; url: string }
   options?: string[]
@@ -27,6 +38,9 @@ export const SCENARIO = {
 }
 
 export const TASKS: Task[] = [
+
+  // ── STAGE 1: INITIAL TRIAGE ────────────────────────────────────────────────
+
   {
     id: 'task-1',
     stage: 1,
@@ -50,12 +64,13 @@ export const TASKS: Task[] = [
     },
     hints: [
       'Look for WARN and ALERT level entries — these flag authentication failures and suspicious events.',
-      'The attacker is connecting from outside the network. Internal IPs start with 192.168.x.x or 10.0.x.x.',
-      'Filter by the username sarah.chen — which external IP is repeatedly attempting to log in as her?',
+      'The attacker is connecting from outside. Internal IPs start with 192.168.x.x or 10.0.x.x.',
+      'Filter by sarah.chen — which external IP is repeatedly trying to log in as her?',
     ],
     options: ['192.168.1.54', '185.220.101.47', '91.108.4.200', '8.8.8.8'],
     answer: '185.220.101.47',
   },
+
   {
     id: 'task-2',
     stage: 1,
@@ -65,7 +80,7 @@ export const TASKS: Task[] = [
     categoryIcon: '📧',
     points: 15,
     type: 'multiple_choice',
-    description: `An email chain involving sarah.chen has been intercepted overnight. One of these emails is a phishing attempt designed to steal her login credentials.\n\nReview the email headers and body carefully. Identify the primary indicator that reveals this is a phishing attack.`,
+    description: `An email chain involving sarah.chen has been intercepted. One email is a phishing attempt designed to steal her credentials.\n\nReview the headers carefully. What is the primary indicator that this is a phishing attack?`,
     evidence: {
       label: 'Intercepted Email — sarah.chen@harbourtech.com',
       rows: [
@@ -77,9 +92,9 @@ export const TASKS: Task[] = [
       ],
     },
     hints: [
-      'Focus on the FROM address — compare the domain carefully with the real HarbourTech domain.',
-      "HarbourTech's legitimate email domain is @harbourtech.com. What domain is this email actually from?",
-      'harbourtech-helpdesk.net is a completely different domain to harbourtech.com — this is called domain spoofing.',
+      'Focus on the FROM address — compare the domain with the real HarbourTech domain.',
+      "HarbourTech's real email domain is @harbourtech.com. What domain is this email actually from?",
+      'harbourtech-helpdesk.net is a completely different domain — owned by someone else. This is domain spoofing.',
     ],
     options: [
       'The email was sent outside working hours',
@@ -89,6 +104,7 @@ export const TASKS: Task[] = [
     ],
     answer: 'The sender domain is harbourtech-helpdesk.net, not harbourtech.com',
   },
+
   {
     id: 'task-3',
     stage: 1,
@@ -102,49 +118,164 @@ export const TASKS: Task[] = [
     evidence: {
       label: 'Intercepted Reply — outbound from sarah.chen',
       rows: [
-        { cols: ['FROM',    'sarah.chen@harbourtech.com'],                                              highlight: false },
-        { cols: ['TO',      'it-support@harbourtech-helpdesk.net'],                                    highlight: true  },
-        { cols: ['TIME',    '2026-06-23 14:41:52'],                                                   highlight: false },
-        { cols: ['BODY',    '"I verified on the link. I used my usual password: Ch3rryBl0ss0m!"'],     highlight: true  },
-        { cols: ['ROLE',    'Finance Manager, HarbourTech Ltd'],                                       highlight: false },
+        { cols: ['FROM',    'sarah.chen@harbourtech.com'],                                          highlight: false },
+        { cols: ['TO',      'it-support@harbourtech-helpdesk.net'],                                highlight: true  },
+        { cols: ['TIME',    '2026-06-23 14:41:52'],                                               highlight: false },
+        { cols: ['BODY',    '"I verified on the link. I used my usual password: Ch3rryBl0ss0m!"'], highlight: true  },
+        { cols: ['ROLE',    'Finance Manager, HarbourTech Ltd'],                                   highlight: false },
       ],
     },
     hints: [
-      "Read Sarah's reply carefully — she has included sensitive information in her response.",
+      "Read Sarah's reply carefully — she included sensitive information in her response.",
       'Sarah replied directly to the phishing address with her actual password in plaintext.',
-      "The compromised account belongs to the person who replied. Their username matches their email prefix.",
+      "The compromised account belongs to the person who replied. Username matches their email prefix.",
     ],
     options: ['j.harris', 'm.patel', 'sarah.chen', 'd.wright'],
     answer: 'sarah.chen',
   },
+
+  // ── STAGE 2: DEEP INVESTIGATION ───────────────────────────────────────────
+
   {
     id: 'task-4',
     stage: 2,
-    title: 'IP Reputation Check',
+    title: 'IP Reputation — AbuseIPDB',
     category: 'osint',
     categoryLabel: 'OSINT',
     categoryIcon: '🔍',
     points: 20,
     type: 'external_lookup',
-    description: `You have identified the attacker IP. Real SOC analysts always verify IPs against threat intelligence databases.\n\nUse AbuseIPDB to look up the IP. Record:\n1. What type of IP is it?\n2. What is its Abuse Confidence Score (%)?\n3. How many times has it been reported?\n\nThis is a live lookup against a real database.`,
+    description: `You have identified the attacker IP. Real SOC analysts always verify suspicious IPs against threat intelligence databases before escalating an incident.\n\nUsing AbuseIPDB, look up the attacker IP address you found in Stage 1. You will need to find the IP from the firewall evidence and enter it yourself.\n\nRecord: (1) What type of IP is it? (2) What is its Abuse Confidence Score? (3) How many times has it been reported?`,
     evidence: {
-      label: 'Target IP from network logs',
+      label: 'Reminder — attacker IP from Stage 1 firewall logs',
       rows: [
-        { cols: ['IP Address', '185.220.101.47'],                          highlight: true  },
-        { cols: ['Source',     'Multiple failed logins at 02:12'],         highlight: false },
-        { cols: ['Action',     'Successful login at 02:13:02'],            highlight: true  },
+        { cols: ['02:12:33', 'WARN',  '185.220.101.47', '→ 10.0.1.15:443', 'Failed login — user: sarah.chen'], highlight: true },
+        { cols: ['02:13:02', 'ALERT', '185.220.101.47', '→ 10.0.1.15:443', 'SUCCESS login — user: sarah.chen'], highlight: true },
       ],
     },
+    tutorial: {
+      toolName: 'AbuseIPDB',
+      whatItIs: 'AbuseIPDB is a free database where security professionals worldwide report malicious IP addresses. Think of it as a community-run "wanted list" for bad IPs on the internet.',
+      whySocUseIt: 'SOC analysts check every suspicious IP against AbuseIPDB as a first step. If thousands of other analysts have already reported an IP as malicious, it saves hours of investigation time.',
+      steps: [
+        'Click "Open AbuseIPDB" below — this takes you to the tool homepage.',
+        'Find the search box at the top of the page.',
+        'Type in the attacker IP address from the firewall evidence above.',
+        'Press Enter or click the Check button.',
+        'Read the results page carefully.',
+      ],
+      lookFor: [
+        'Abuse Confidence Score — shown as a percentage. 100% means every analyst who checked this IP confirmed it is malicious.',
+        'Usage Type — tells you what kind of IP this is (e.g. Data Center, Tor exit node, residential).',
+        'Total Reports — how many times it has been reported globally.',
+        'Last Reported — when was the most recent report? Recent = still active threat.',
+      ],
+      lookupLabel: 'IP address to look up (from firewall logs)',
+      lookupValue: '185.220.101.47',
+    },
     hints: [
-      'Click "Open AbuseIPDB" below and enter 185.220.101.47 in the search box.',
-      'Look for the Abuse Confidence Score — a high percentage means it is well-known to the security community as malicious.',
-      'Check the ISP and Usage Type fields — a Tor exit node anonymises attacker traffic by routing it through multiple servers.',
+      'Navigate to abuseipdb.com and type the attacker IP into the search box — you need to find it from the firewall evidence above.',
+      'Look for the Abuse Confidence Score. Anything above 80% is considered high risk by the security community.',
+      'A Tor exit node anonymises attacker traffic by routing it through multiple servers around the world — this is why the IP appears to be in Romania.',
     ],
-    resource: { label: '🔗 Open AbuseIPDB', url: 'https://www.abuseipdb.com/check/185.220.101.47' },
+    resource: { label: '🔗 Open AbuseIPDB', url: 'https://www.abuseipdb.com' },
     answerGuidance: 'Tor exit node, 100% confidence score, hundreds of reports. Tor anonymises attacker location.',
   },
+
   {
     id: 'task-5',
+    stage: 2,
+    title: 'IP Reputation — VirusTotal',
+    category: 'osint',
+    categoryLabel: 'OSINT',
+    categoryIcon: '🔍',
+    points: 20,
+    type: 'external_lookup',
+    description: `AbuseIPDB is one database — but SOC analysts cross-reference multiple sources. VirusTotal checks an IP against 70+ different security vendors simultaneously.\n\nLook up the same attacker IP on VirusTotal and compare the results to AbuseIPDB. What do the different security vendors say about this IP?`,
+    evidence: {
+      label: 'Reminder — attacker IP from Stage 1',
+      rows: [
+        { cols: ['Attacker IP', '185.220.101.47', 'Found in firewall logs at 02:12–02:13'], highlight: true },
+      ],
+    },
+    tutorial: {
+      toolName: 'VirusTotal',
+      whatItIs: 'VirusTotal is a free tool owned by Google that scans files, URLs, domains and IP addresses using over 70 different antivirus engines and security databases — all at once.',
+      whySocUseIt: "SOC analysts use VirusTotal to get a consensus view from many security vendors quickly. If 50 out of 70 engines flag something as malicious, that's a strong signal. If only 1 flags it, it might be a false positive.",
+      steps: [
+        'Click "Open VirusTotal" below.',
+        'Click on the "SEARCH" tab at the top of the page.',
+        'Type the attacker IP address from the evidence above into the search box.',
+        'Press Enter to run the search.',
+        'Look at the Detection tab — this shows results from all 70+ vendors.',
+      ],
+      lookFor: [
+        'Detection ratio — shown as X/Y (e.g. 12/94 means 12 out of 94 vendors flagged it as malicious).',
+        'Community score — the coloured circle at the top (red = known bad).',
+        'Categories — what type of threat vendors have classified this IP as.',
+        'Last Analysis Date — is this information recent or outdated?',
+      ],
+      lookupLabel: 'IP address to search on VirusTotal',
+      lookupValue: '185.220.101.47',
+    },
+    hints: [
+      'Go to virustotal.com, click SEARCH, and type the attacker IP address from the evidence above.',
+      'Look at the Detection tab — it shows results from all the different security vendors. Count how many flag it as malicious.',
+      "Compare the result to AbuseIPDB. Do they agree? Cross-referencing tools gives you more confidence in your findings.",
+    ],
+    resource: { label: '🔗 Open VirusTotal', url: 'https://www.virustotal.com' },
+    answerGuidance: 'Tor exit node flagged by multiple vendors. Detection ratio varies but community score is high-risk. Categories include anonymizer, proxy.',
+  },
+
+  {
+    id: 'task-6',
+    stage: 2,
+    title: 'Domain Intelligence Check',
+    category: 'osint',
+    categoryLabel: 'OSINT',
+    categoryIcon: '🔍',
+    points: 20,
+    type: 'external_lookup',
+    description: `The phishing email came from the domain harbourtech-helpdesk.net. Attackers often register fake lookalike domains just days before launching a phishing campaign.\n\nUse URLScan.io to investigate this domain. Look at when it was first seen, what it looks like, and whether it has been flagged as malicious.`,
+    evidence: {
+      label: 'Phishing sender domain from intercepted email',
+      rows: [
+        { cols: ['FROM',   'it-support@harbourtech-helpdesk.net'],                       highlight: true  },
+        { cols: ['DOMAIN', 'harbourtech-helpdesk.net'],                                  highlight: true  },
+        { cols: ['NOTE',   'Real HarbourTech domain is harbourtech.com — NOT this one'], highlight: false },
+      ],
+    },
+    tutorial: {
+      toolName: 'URLScan.io',
+      whatItIs: "URLScan.io is a free tool that scans websites and records what they look like, what code they run, and who they talk to. It's like taking a screenshot and an X-ray of a website at the same time — without you having to visit it directly (which could be dangerous).",
+      whySocUseIt: 'SOC analysts use URLScan.io to safely investigate suspicious websites and domains without risking their own machine. It also shows historical scans, so you can see when a domain first appeared.',
+      steps: [
+        'Click "Open URLScan.io" below.',
+        'Find the search bar at the top of the page.',
+        'Type the phishing domain from the evidence above.',
+        'Press Enter to search for existing scans of this domain.',
+        'If scans exist, click one to see the full report — screenshot, network activity, and threat indicators.',
+      ],
+      lookFor: [
+        'First seen date — a newly registered domain is a major red flag for phishing.',
+        'Screenshot — does the site look like a legitimate company login page? Fake login pages are designed to steal credentials.',
+        'Verdicts — has it been tagged as phishing, malicious, or suspicious?',
+        'Redirects — does visiting the URL redirect you somewhere else?',
+      ],
+      lookupLabel: 'Domain to search on URLScan.io',
+      lookupValue: 'harbourtech-helpdesk.net',
+    },
+    hints: [
+      'Go to urlscan.io and search for the phishing domain. Find it in the email evidence above — you need to type it yourself.',
+      'If no scans exist for this fictional domain, search for a known phishing domain like: phishing-domain-example.com — the tool behaviour is the same.',
+      'In a real incident, a newly registered domain (less than 2 weeks old) combined with a name similar to a real company is a strong phishing indicator.',
+    ],
+    resource: { label: '🔗 Open URLScan.io', url: 'https://urlscan.io' },
+    answerGuidance: 'Newly registered domain imitating legitimate company. Likely shows fake login page. Flagged as phishing/malicious by community.',
+  },
+
+  {
+    id: 'task-7',
     stage: 2,
     title: 'Trace the Data Exfiltration',
     category: 'network',
@@ -152,7 +283,7 @@ export const TASKS: Task[] = [
     categoryIcon: '🌐',
     points: 15,
     type: 'multiple_choice',
-    description: `The network logs show a massive 847MB outbound data transfer at 02:38. This is almost certainly the stolen data leaving the network.\n\nIdentify the destination and determine what type of service received the stolen data.`,
+    description: `The network logs show a massive 847MB outbound data transfer at 02:38. This is almost certainly the stolen data leaving the network.\n\nIdentify the destination and determine what type of service received it.`,
     evidence: {
       label: 'Firewall Log — outbound transfers',
       rows: [
@@ -174,8 +305,9 @@ export const TASKS: Task[] = [
     ],
     answer: 'An anonymous cloud storage server with no identity verification',
   },
+
   {
-    id: 'task-6',
+    id: 'task-8',
     stage: 2,
     title: 'Catalogue the Stolen Files',
     category: 'files',
@@ -197,8 +329,8 @@ export const TASKS: Task[] = [
     },
     hints: [
       'Look at the directory paths — /finance/, /hr/, /legal/ and /exec/ tell you the data type.',
-      'payroll = HR data, budget/invoice = financial data, contracts = legal, board_minutes = executive.',
-      'This type of breach would trigger GDPR reporting obligations within 72 hours.',
+      'payroll = HR data, budget/invoice = financial, contracts = legal, board_minutes = executive.',
+      'This type of breach triggers GDPR reporting obligations within 72 hours.',
     ],
     options: [
       'Customer shipping manifests and operational route data',
@@ -208,8 +340,9 @@ export const TASKS: Task[] = [
     ],
     answer: 'Financial records, payroll data, legal contracts and board minutes',
   },
+
   {
-    id: 'task-7',
+    id: 'task-9',
     stage: 2,
     title: 'Reconstruct the Attack Timeline',
     category: 'network',
@@ -217,33 +350,83 @@ export const TASKS: Task[] = [
     categoryIcon: '🌐',
     points: 20,
     type: 'multiple_choice',
-    description: `A key part of incident response is reconstructing exactly how and when the attack unfolded. This forms the basis of your incident report.\n\nUsing all the evidence, place these events in the correct chronological order.`,
+    description: `A key part of incident response is reconstructing exactly how and when the attack unfolded.\n\nUsing all the evidence, place these events in the correct chronological order.`,
     evidence: {
       label: 'Key timestamps across all evidence',
       rows: [
-        { cols: ['14:23 (prev day)', 'EMAIL',   'Phishing email received by sarah.chen'],        highlight: false },
-        { cols: ['14:41 (prev day)', 'EMAIL',   'sarah.chen replies with credentials'],           highlight: false },
-        { cols: ['02:12–02:13',      'NETWORK', '3x failed logins, then success from 185.220.101.47'], highlight: false },
-        { cols: ['02:15–02:17',      'FILES',   '6 sensitive files READ from server'],            highlight: false },
-        { cols: ['02:36–02:38',      'FILES',   '6 files DOWNLOADED'],                           highlight: false },
-        { cols: ['02:38:41',         'NETWORK', '847MB transferred to 91.108.4.200'],            highlight: false },
+        { cols: ['14:23 (prev day)', 'EMAIL',   'Phishing email received by sarah.chen'],             highlight: false },
+        { cols: ['14:41 (prev day)', 'EMAIL',   'sarah.chen replies with credentials'],               highlight: false },
+        { cols: ['02:12–02:13',      'NETWORK', '3x failed logins then success from 185.220.101.47'], highlight: false },
+        { cols: ['02:15–02:17',      'FILES',   '6 sensitive files READ from server'],                highlight: false },
+        { cols: ['02:36–02:38',      'FILES',   '6 files DOWNLOADED'],                               highlight: false },
+        { cols: ['02:38:41',         'NETWORK', '847MB transferred to 91.108.4.200'],                highlight: false },
       ],
     },
     hints: [
       'Start with the phishing email — that initiated the entire attack chain.',
-      "The attacker needed Sarah's credentials before they could attempt to log in.",
-      'Correct sequence: bait → steal credentials → use credentials → take data → exfiltrate.',
+      "The attacker needed Sarah's credentials before they could log in. What happened between 14:23 and 02:12?",
+      'Correct sequence: bait → steal credentials → use credentials → access data → exfiltrate.',
     ],
     options: [
-      'Phishing sent → Credentials stolen → Failed logins → Successful login → Files read → Files downloaded → Exfiltrated',
+      'Phishing sent → Credentials stolen → Failed logins → Successful login → Files read → Downloaded → Exfiltrated',
       'Failed logins → Phishing sent → Credentials stolen → Successful login → Files downloaded → Exfiltrated',
       'Successful login → Phishing sent → Credentials stolen → Files read → Failed logins → Exfiltrated',
       'Phishing sent → Failed logins → Credentials stolen → Successful login → Exfiltrated → Files downloaded',
     ],
-    answer: 'Phishing sent → Credentials stolen → Failed logins → Successful login → Files read → Files downloaded → Exfiltrated',
+    answer: 'Phishing sent → Credentials stolen → Failed logins → Successful login → Files read → Downloaded → Exfiltrated',
   },
+
+  // ── STAGE 3: INCIDENT RESPONSE ────────────────────────────────────────────
+
   {
-    id: 'task-8',
+    id: 'task-10',
+    stage: 3,
+    title: 'Server Recon — Shodan',
+    category: 'osint',
+    categoryLabel: 'OSINT',
+    categoryIcon: '🔍',
+    points: 20,
+    type: 'external_lookup',
+    description: `The stolen data was sent to 91.108.4.200. Before the IR team can attempt to recover or request takedown of the data, they need to understand what this server is.\n\nUse Shodan to investigate this IP. Shodan reveals what services and ports are publicly accessible on an internet-connected server.`,
+    evidence: {
+      label: 'Exfiltration destination from network logs',
+      rows: [
+        { cols: ['Destination IP', '91.108.4.200',       'Received 847MB at 02:38:41'],        highlight: true  },
+        { cols: ['Country',        'Netherlands'],                                               highlight: false },
+        { cols: ['Type',           'Anonymous cloud storage — no identity verification (KYC)'], highlight: true  },
+      ],
+    },
+    tutorial: {
+      toolName: 'Shodan',
+      whatItIs: "Shodan is a search engine for internet-connected devices and servers. While Google indexes websites, Shodan indexes the servers and devices themselves — showing what ports are open, what software they're running, and where they are in the world.",
+      whySocUseIt: "SOC analysts and incident responders use Shodan to understand what a suspicious server is and what it's doing. Knowing what services are exposed on an attacker's server can help identify its purpose and who might operate it.",
+      steps: [
+        'Click "Open Shodan" below. Note: Shodan may ask you to create a free account to see full results.',
+        'Find the search box at the top of the page.',
+        'Type the exfiltration destination IP from the evidence above.',
+        'Press Enter to view the host report.',
+        'Review the open ports, services, and organisation information.',
+      ],
+      lookFor: [
+        'Open ports — port 443 (HTTPS) and 80 (HTTP) suggest a web server. Port 22 (SSH) suggests remote access.',
+        'Organisation — who owns the IP range? Is it a known hosting provider or something obscure?',
+        'Hostnames — does the server have a domain name associated with it?',
+        'Location — country and city. Does this match the firewall log data?',
+      ],
+      lookupLabel: 'IP address to investigate on Shodan',
+      lookupValue: '91.108.4.200',
+    },
+    hints: [
+      'Go to shodan.io and enter the exfiltration destination IP from the evidence. You will need to type it yourself.',
+      'Look at the open ports and the organisation name — this tells you what the server does and who runs it.',
+      'Cloud storage servers typically show port 443 (HTTPS) as open. The organisation name may reveal the hosting provider.',
+    ],
+    resource: { label: '🔗 Open Shodan', url: 'https://www.shodan.io' },
+    answerGuidance: 'Port 443 open, hosted by a cloud/VPS provider in Netherlands. Organisation reveals anonymous hosting. Confirms exfiltration destination is a file-hosting service.',
+  },
+
+  {
+    id: 'task-11',
     stage: 3,
     title: 'Classify the Attack (MITRE ATT&CK)',
     category: 'threat_intel',
@@ -251,12 +434,12 @@ export const TASKS: Task[] = [
     categoryIcon: '🛡️',
     points: 20,
     type: 'multiple_choice',
-    description: `SOC analysts use the MITRE ATT&CK framework to classify incidents. Open the link below, browse to the Phishing technique, and identify which sub-technique best matches this attack.`,
+    description: `SOC analysts use the MITRE ATT&CK framework to classify incidents using a shared language. Open the link and find which technique best matches the initial access method used in this attack.`,
     evidence: null,
     hints: [
       'Open MITRE ATT&CK and look under the Initial Access tactic. The attacker gained access via a deceptive email.',
       'T1566 is the Phishing technique. Look at its sub-techniques.',
-      'T1566.001 is Spearphishing Link — a targeted email with a malicious link to capture credentials. That is exactly what happened here.',
+      'T1566.001 is Spearphishing Link — a targeted email with a link to capture credentials. That is exactly this attack.',
     ],
     resource: { label: '🔗 Open MITRE ATT&CK — Phishing', url: 'https://attack.mitre.org/techniques/T1566/' },
     options: [
@@ -267,8 +450,9 @@ export const TASKS: Task[] = [
     ],
     answer: 'T1566.001 — Phishing: Spearphishing Link',
   },
+
   {
-    id: 'task-9',
+    id: 'task-12',
     stage: 3,
     title: 'Immediate Response Plan',
     category: 'response',
@@ -276,11 +460,11 @@ export const TASKS: Task[] = [
     categoryIcon: '🚨',
     points: 25,
     type: 'free_text',
-    description: `The attack is confirmed. As SOC team lead, recommend the three most critical immediate containment actions.\n\nThink about:\n- The compromised account\n- The network connection to the exfiltration server\n- Evidence preservation\n- Regulatory obligations (UK GDPR)\n\nUse the NCSC guide as a reference.`,
+    description: `The attack is confirmed. As the SOC team lead, write your three most critical immediate containment actions.\n\nThink about:\n- The compromised account\n- The network connection to the exfiltration server\n- Evidence preservation\n- UK GDPR obligations\n\nUse the NCSC guide as a reference.`,
     evidence: null,
     hints: [
       'First priority: stop the bleeding. What account is still accessible to the attacker?',
-      'Consider: disable the account, block the exfil IP at the firewall, preserve log files for forensics.',
+      'Consider: disable the account, block the exfil IP at the firewall, preserve all log files for forensics.',
       'Under UK GDPR, personal data breaches must be reported to the ICO within 72 hours. Payroll data is personal data.',
     ],
     resource: { label: '🔗 NCSC — Incident Response Guide', url: 'https://www.ncsc.gov.uk/collection/incident-management' },

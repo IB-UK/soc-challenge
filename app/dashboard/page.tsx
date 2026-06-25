@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation'
 import { supabase, type Team, type Member, type TaskProgress } from '@/lib/supabase'
 import { TASKS, SCENARIO, STAGE_UNLOCK_REQUIREMENTS, type Task } from '@/lib/challenge-data'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 const STAGE_LABELS: Record<number, string> = {
   1: 'Stage 1 — Initial Triage',
   2: 'Stage 2 — Deep Investigation',
@@ -23,15 +21,11 @@ const CAT_COLOURS: Record<string, string> = {
 }
 
 function formatTime(s: number) {
-  const m = Math.floor(s / 60)
-  return `${String(m).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`
+  return `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`
 }
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter()
-
   const [team,     setTeam]     = useState<Team | null>(null)
   const [member,   setMember]   = useState<Member | null>(null)
   const [members,  setMembers]  = useState<Member[]>([])
@@ -40,27 +34,21 @@ export default function DashboardPage() {
   const [timeLeft, setTimeLeft] = useState(SCENARIO.duration * 60)
   const [startTs]               = useState(Date.now())
 
-  // Load session from localStorage
   useEffect(() => {
-    const teamId   = localStorage.getItem('soc_team_id')
-    const teamName = localStorage.getItem('soc_team_name')
-    const memberId = localStorage.getItem('soc_member_id')
+    const teamId     = localStorage.getItem('soc_team_id')
+    const teamName   = localStorage.getItem('soc_team_name')
+    const memberId   = localStorage.getItem('soc_member_id')
     const memberName = localStorage.getItem('soc_member_name')
     if (!teamId || !memberId) { router.push('/'); return }
-
     setTeam({ id: teamId, name: teamName ?? '', pin: '', created_at: '' })
     setMember({ id: memberId, team_id: teamId, name: memberName ?? '', created_at: '' })
 
-    // Fetch members
     supabase.from('soc_members').select('*').eq('team_id', teamId)
       .then(({ data }) => { if (data) setMembers(data) })
-
-    // Fetch task progress
     supabase.from('soc_task_progress').select('*').eq('team_id', teamId)
       .then(({ data }) => { if (data) setProgress(data) })
 
-    // Realtime
-    const channel = supabase.channel(`dashboard_${teamId}`)
+    const ch = supabase.channel(`dash_${teamId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'soc_task_progress',
           filter: `team_id=eq.${teamId}` }, () => {
         supabase.from('soc_task_progress').select('*').eq('team_id', teamId)
@@ -72,48 +60,38 @@ export default function DashboardPage() {
           .then(({ data }) => { if (data) setMembers(data) })
       })
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [router])
 
-  // Countdown
   useEffect(() => {
     const iv = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTs) / 1000)
-      setTimeLeft(Math.max(0, SCENARIO.duration * 60 - elapsed))
+      setTimeLeft(Math.max(0, SCENARIO.duration * 60 - Math.floor((Date.now() - startTs) / 1000)))
     }, 1000)
     return () => clearInterval(iv)
   }, [startTs])
 
-  // Computed values
-  const getProgress = useCallback((taskId: string) =>
-    progress.find(p => p.task_id === taskId), [progress])
+  const getProgress = useCallback((taskId: string) => progress.find(p => p.task_id === taskId), [progress])
 
   const completedInStage = useCallback((stage: number) =>
-    TASKS.filter(t => t.stage === stage)
-         .filter(t => getProgress(t.id)?.status === 'completed').length,
+    TASKS.filter(t => t.stage === stage && getProgress(t.id)?.status === 'completed').length,
   [getProgress])
 
   function isStageUnlocked(stage: number): boolean {
     if (stage === 1) return true
-    const req = STAGE_UNLOCK_REQUIREMENTS[stage as 2 | 3]
-    return completedInStage(stage - 1) >= req
+    return completedInStage(stage - 1) >= STAGE_UNLOCK_REQUIREMENTS[stage as 2 | 3]
   }
 
-  const teamScore = progress.reduce((sum, p) => sum + (p.score ?? 0), 0)
+  const teamScore     = progress.reduce((sum, p) => sum + (p.score ?? 0), 0)
   const completedCount = progress.filter(p => p.status === 'completed').length
 
-  // Actions
   async function grabTask(task: Task) {
     if (!team || !member) return
-    const { error } = await supabase.from('soc_task_progress').upsert({
-      team_id:     team.id,
-      task_id:     task.id,
-      member_id:   member.id,
-      member_name: member.name,
-      status:      'in_progress',
-      grabbed_at:  new Date().toISOString(),
+    await supabase.from('soc_task_progress').upsert({
+      team_id: team.id, task_id: task.id,
+      member_id: member.id, member_name: member.name,
+      status: 'in_progress', grabbed_at: new Date().toISOString(),
     }, { onConflict: 'team_id,task_id' })
-    if (!error) setActive(task)
+    setActive(task)
   }
 
   async function releaseTask(task: Task) {
@@ -128,18 +106,11 @@ export default function DashboardPage() {
     if (!team) return
     let score = task.points - hintsUsed * 5
     if (task.type === 'multiple_choice' && answer !== task.answer) score = 0
-    if (task.type === 'free_text' || task.type === 'external_lookup') score = Math.max(score, 0)
     score = Math.max(0, score)
-
     await supabase.from('soc_task_progress').upsert({
-      team_id:      team.id,
-      task_id:      task.id,
-      member_id:    member?.id,
-      member_name:  member?.name,
-      status:       'completed',
-      answer,
-      score,
-      hints_used:   hintsUsed,
+      team_id: team.id, task_id: task.id,
+      member_id: member?.id, member_name: member?.name,
+      status: 'completed', answer, score, hints_used: hintsUsed,
       completed_at: new Date().toISOString(),
     }, { onConflict: 'team_id,task_id' })
     setActive(null)
@@ -147,12 +118,8 @@ export default function DashboardPage() {
 
   if (!team) return null
 
-  const stages = [1, 2, 3] as const
-
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0d1b2e' }}>
-
-      {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-2 border-b shrink-0"
         style={{ backgroundColor: '#0f2340', borderColor: '#1B3A6B' }}>
         <div className="flex items-center gap-3">
@@ -166,7 +133,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className={`font-mono font-bold text-lg ${timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+          <div className={"font-mono font-bold text-lg " + (timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white')}>
             ⏱ {formatTime(timeLeft)}
           </div>
           <button onClick={() => router.push('/leaderboard')}
@@ -177,22 +144,16 @@ export default function DashboardPage() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-
-        {/* Sidebar */}
         <aside className="w-52 shrink-0 border-r p-3 flex flex-col gap-4 overflow-y-auto"
           style={{ backgroundColor: '#0f2340', borderColor: '#1B3A6B' }}>
-
-          {/* Score */}
           <div>
             <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-1">Team Score</p>
             <div className="text-3xl font-bold font-mono" style={{ color: '#00AEEF' }}>{teamScore}</div>
             <p className="text-xs font-mono text-slate-500">{completedCount}/{TASKS.length} tasks done</p>
           </div>
-
-          {/* Stage progress */}
           <div>
             <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Progress</p>
-            {stages.map(s => {
+            {([1,2,3] as const).map(s => {
               const total = TASKS.filter(t => t.stage === s).length
               const done  = completedInStage(s)
               const unlocked = isStageUnlocked(s)
@@ -204,14 +165,12 @@ export default function DashboardPage() {
                   </div>
                   <div className="h-1.5 rounded-full bg-slate-800">
                     <div className="h-1.5 rounded-full transition-all duration-500"
-                      style={{ width: `${total > 0 ? (done / total) * 100 : 0}%`, backgroundColor: unlocked ? '#00AEEF' : '#334155' }} />
+                      style={{ width: (total > 0 ? done / total * 100 : 0) + '%', backgroundColor: unlocked ? '#00AEEF' : '#334155' }} />
                   </div>
                 </div>
               )
             })}
           </div>
-
-          {/* Team members */}
           <div>
             <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Team Members</p>
             {members.length === 0
@@ -219,58 +178,47 @@ export default function DashboardPage() {
               : members.map(m => (
                   <div key={m.id} className="flex items-center gap-2 mb-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    <span className={`text-xs font-mono ${m.id === member?.id ? 'text-white font-bold' : 'text-slate-400'}`}>
+                    <span className={"text-xs font-mono " + (m.id === member?.id ? 'text-white font-bold' : 'text-slate-400')}>
                       {m.name}{m.id === member?.id ? ' (you)' : ''}
                     </span>
                   </div>
                 ))
             }
           </div>
-
-          {/* Invite hint */}
           <div className="text-xs font-mono text-slate-600 leading-relaxed border-t border-slate-800 pt-3">
-            Share your team name &amp; PIN so teammates can join from the login page.
+            Share your team name and PIN so teammates can join from the login page.
           </div>
         </aside>
 
-        {/* Task board */}
         <main className="flex-1 overflow-y-auto p-4">
-          {stages.map(stage => {
-            const stageTasks  = TASKS.filter(t => t.stage === stage)
-            const unlocked    = isStageUnlocked(stage)
-            const req         = STAGE_UNLOCK_REQUIREMENTS[stage as 2 | 3]
-            const prevDone    = stage > 1 ? completedInStage(stage - 1) : 0
-
+          {([1,2,3] as const).map(stage => {
+            const stageTasks = TASKS.filter(t => t.stage === stage)
+            const unlocked   = isStageUnlocked(stage)
+            const req        = STAGE_UNLOCK_REQUIREMENTS[stage as 2 | 3]
+            const prevDone   = stage > 1 ? completedInStage(stage - 1) : 0
             return (
               <section key={stage} className="mb-8">
                 <div className="flex items-center gap-3 mb-3">
-                  <h2 className={`text-sm font-bold font-mono uppercase tracking-widest ${unlocked ? 'text-white' : 'text-slate-600'}`}>
+                  <h2 className={"text-sm font-bold font-mono uppercase tracking-widest " + (unlocked ? 'text-white' : 'text-slate-600')}>
                     {STAGE_LABELS[stage]}
                   </h2>
-                  {!unlocked && (
+                  {!unlocked ? (
                     <span className="text-xs font-mono text-slate-500 border border-slate-700 rounded px-2 py-0.5">
-                      🔒 Unlocks when {req - prevDone} more Stage {stage - 1} task{req - prevDone !== 1 ? 's' : ''} complete
+                      🔒 Complete {req - prevDone} more Stage {stage - 1} task{req - prevDone !== 1 ? 's' : ''} to unlock
                     </span>
-                  )}
-                  {unlocked && (
+                  ) : (
                     <span className="text-xs font-mono text-green-400 border border-green-800 bg-green-900/20 rounded px-2 py-0.5">
                       ✓ UNLOCKED
                     </span>
                   )}
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {stageTasks.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
+                    <TaskCard key={task.id} task={task}
                       progress={getProgress(task.id)}
                       myId={member?.id ?? ''}
                       locked={!unlocked}
-                      onOpen={() => {
-                        if (!unlocked) return
-                        setActive(task)
-                      }}
+                      onOpen={() => { if (unlocked) setActive(task) }}
                     />
                   ))}
                 </div>
@@ -280,7 +228,6 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      {/* Task panel overlay */}
       {active && (
         <TaskPanel
           task={active}
@@ -299,40 +246,38 @@ export default function DashboardPage() {
 // ── TaskCard ──────────────────────────────────────────────────────────────────
 
 function TaskCard({ task, progress, myId, locked, onOpen }: {
-  task: Task
-  progress: TaskProgress | undefined
-  myId: string
-  locked: boolean
-  onOpen: () => void
+  task: Task; progress: TaskProgress | undefined
+  myId: string; locked: boolean; onOpen: () => void
 }) {
   const status = progress?.status ?? 'available'
   const ismine = progress?.member_id === myId
 
-  const statusStyle =
-    locked         ? 'border-slate-800 opacity-50 cursor-not-allowed' :
-    status === 'completed'  ? 'border-green-700 bg-green-950/20 cursor-pointer' :
+  const border =
+    locked              ? 'border-slate-800 opacity-50 cursor-not-allowed' :
+    status === 'completed'   ? 'border-green-700 bg-green-950/20 cursor-pointer' :
     status === 'in_progress' && ismine ? 'border-[#00AEEF] cursor-pointer' :
     status === 'in_progress' ? 'border-yellow-700 bg-yellow-950/10 cursor-pointer' :
     'border-[#1B3A6B] hover:border-[#00AEEF] cursor-pointer'
 
   return (
-    <div
-      onClick={onOpen}
-      className={`rounded-lg border p-3 flex flex-col gap-2 transition-all ${statusStyle}`}
-      style={{ backgroundColor: locked ? '#0d1b2e' : '#0f2340' }}
-    >
+    <div onClick={onOpen}
+      className={"rounded-lg border p-3 flex flex-col gap-2 transition-all " + border}
+      style={{ backgroundColor: locked ? '#0d1b2e' : '#0f2340' }}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-lg">{task.categoryIcon}</span>
         <span className="text-xs font-mono font-bold" style={{ color: '#00AEEF' }}>{task.points}pts</span>
       </div>
-
       <div>
-        <p className={`text-xs font-bold leading-snug ${locked ? 'text-slate-600' : 'text-white'}`}>{task.title}</p>
-        <span className={`inline-block mt-1 text-[10px] font-mono px-1.5 py-0.5 rounded border ${CAT_COLOURS[task.category]}`}>
+        <p className={"text-xs font-bold leading-snug " + (locked ? 'text-slate-600' : 'text-white')}>{task.title}</p>
+        <span className={"inline-block mt-1 text-[10px] font-mono px-1.5 py-0.5 rounded border " + CAT_COLOURS[task.category]}>
           {task.categoryLabel}
         </span>
+        {task.tutorial && !locked && (
+          <span className="inline-block mt-1 ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-yellow-800 bg-yellow-900/20 text-yellow-400">
+            🛠 Tool Guide
+          </span>
+        )}
       </div>
-
       <div className="mt-auto">
         {locked ? (
           <span className="text-xs font-mono text-slate-600">🔒 Locked</span>
@@ -344,7 +289,7 @@ function TaskCard({ task, progress, myId, locked, onOpen }: {
         ) : status === 'in_progress' ? (
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-            <span className={`text-xs font-mono ${ismine ? 'text-[#00AEEF] font-bold' : 'text-yellow-400'}`}>
+            <span className={"text-xs font-mono " + (ismine ? 'text-[#00AEEF] font-bold' : 'text-yellow-400')}>
               {ismine ? 'You — click to continue' : progress?.member_name}
             </span>
           </div>
@@ -359,21 +304,18 @@ function TaskCard({ task, progress, myId, locked, onOpen }: {
 // ── TaskPanel ─────────────────────────────────────────────────────────────────
 
 function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit }: {
-  task: Task
-  progress: TaskProgress | undefined
-  myId: string
-  onClose: () => void
-  onGrab: () => void
-  onRelease: () => void
+  task: Task; progress: TaskProgress | undefined; myId: string
+  onClose: () => void; onGrab: () => void; onRelease: () => void
   onSubmit: (answer: string, hintsUsed: number) => void
 }) {
-  const [answer,    setAnswer]    = useState('')
-  const [hintsShown, setHints]   = useState(0)
+  const [answer,     setAnswer]     = useState('')
+  const [hintsShown, setHints]      = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [tutorialOpen, setTutorial] = useState(!!task.tutorial)
 
-  const status  = progress?.status ?? 'available'
-  const ismine  = progress?.member_id === myId
-  const done    = status === 'completed'
+  const status = progress?.status ?? 'available'
+  const ismine = progress?.member_id === myId
+  const done   = status === 'completed'
   const grabbed = status === 'in_progress'
 
   async function handleSubmit() {
@@ -385,19 +327,15 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
 
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose} />
-
-      {/* Panel */}
       <div className="fixed right-0 top-0 bottom-0 w-full max-w-xl z-50 flex flex-col overflow-hidden shadow-2xl"
         style={{ backgroundColor: '#0f2340', borderLeft: '1px solid #1B3A6B' }}>
 
-        {/* Panel header */}
-        <div className="flex items-start justify-between p-4 border-b shrink-0"
-          style={{ borderColor: '#1B3A6B' }}>
+        {/* Header */}
+        <div className="flex items-start justify-between p-4 border-b shrink-0" style={{ borderColor: '#1B3A6B' }}>
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className={`text-xs font-mono px-2 py-0.5 rounded border ${CAT_COLOURS[task.category]}`}>
+              <span className={"text-xs font-mono px-2 py-0.5 rounded border " + CAT_COLOURS[task.category]}>
                 {task.categoryIcon} {task.categoryLabel}
               </span>
               <span className="text-xs font-mono font-bold" style={{ color: '#00AEEF' }}>{task.points} pts</span>
@@ -407,8 +345,70 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
           <button onClick={onClose} className="text-slate-500 hover:text-white text-xl leading-none ml-4">✕</button>
         </div>
 
-        {/* Scrollable content */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
+
+          {/* ── Tool Tutorial (collapsible) ── */}
+          {task.tutorial && (
+            <div className="rounded-lg border border-yellow-700 overflow-hidden">
+              <button
+                onClick={() => setTutorial(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left bg-yellow-900/30 hover:bg-yellow-900/40 transition-all">
+                <div className="flex items-center gap-2">
+                  <span>🛠</span>
+                  <span className="text-sm font-bold text-yellow-300">How to use {task.tutorial.toolName}</span>
+                  <span className="text-xs font-mono text-yellow-600 bg-yellow-900/50 px-2 py-0.5 rounded">Tool Guide</span>
+                </div>
+                <span className="text-yellow-600 text-sm">{tutorialOpen ? '▲ Hide' : '▼ Show'}</span>
+              </button>
+
+              {tutorialOpen && (
+                <div className="px-4 pb-4 pt-3 space-y-4 bg-yellow-950/20">
+
+                  <div>
+                    <p className="text-xs font-mono text-yellow-500 uppercase tracking-widest mb-1">What is it?</p>
+                    <p className="text-sm text-slate-300 leading-relaxed">{task.tutorial.whatItIs}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-mono text-yellow-500 uppercase tracking-widest mb-1">Why do SOC analysts use it?</p>
+                    <p className="text-sm text-slate-300 leading-relaxed">{task.tutorial.whySocUseIt}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-mono text-yellow-500 uppercase tracking-widest mb-2">Step-by-step</p>
+                    <ol className="space-y-1.5">
+                      {task.tutorial.steps.map((step, i) => (
+                        <li key={i} className="flex gap-3 text-sm text-slate-300">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-yellow-800 text-yellow-300 text-xs flex items-center justify-center font-bold">{i+1}</span>
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-mono text-yellow-500 uppercase tracking-widest mb-2">What to look for</p>
+                    <ul className="space-y-1">
+                      {task.tutorial.lookFor.map((item, i) => (
+                        <li key={i} className="flex gap-2 text-sm text-slate-300">
+                          <span className="text-yellow-500 shrink-0">→</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* What to enter callout */}
+                  <div className="rounded border border-yellow-600 bg-yellow-900/40 p-3">
+                    <p className="text-xs font-mono text-yellow-400 uppercase tracking-widest mb-1">{task.tutorial.lookupLabel}</p>
+                    <p className="font-mono text-lg font-bold text-white tracking-widest">{task.tutorial.lookupValue}</p>
+                    <p className="text-xs text-yellow-600 mt-1">Type this into the tool yourself — do not copy a pre-filled link.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{task.description}</p>
@@ -422,11 +422,9 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
               <div className="rounded border overflow-hidden" style={{ borderColor: '#1B3A6B' }}>
                 {task.evidence.rows.map((row, i) => (
                   <div key={i}
-                    className={`flex gap-3 px-3 py-1.5 font-mono text-xs
-                      ${row.highlight ? 'bg-red-950/40 text-red-200' : i % 2 === 0 ? 'bg-[#0d1b2e] text-slate-400' : 'bg-[#111f38] text-slate-400'}`}>
-                    {row.cols.map((c, j) => (
-                      <span key={j} className="shrink-0">{c}</span>
-                    ))}
+                    className={"flex gap-3 px-3 py-1.5 font-mono text-xs " +
+                      (row.highlight ? 'bg-red-950/40 text-red-200' : i % 2 === 0 ? 'bg-[#0d1b2e] text-slate-400' : 'bg-[#111f38] text-slate-400')}>
+                    {row.cols.map((c, j) => <span key={j} className="shrink-0">{c}</span>)}
                   </div>
                 ))}
               </div>
@@ -436,8 +434,7 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
           {/* External resource */}
           {task.resource && (
             <a href={task.resource.url} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2.5 rounded border text-sm font-mono transition-all w-full
-                         border-[#1B3A6B] text-slate-300 hover:border-[#00AEEF] hover:text-white"
+              className="flex items-center gap-2 px-4 py-2.5 rounded border text-sm font-mono transition-all w-full border-[#1B3A6B] text-slate-300 hover:border-[#00AEEF] hover:text-white"
               style={{ backgroundColor: '#162d52' }}>
               {task.resource.label}
               <span className="ml-auto text-slate-500 text-xs">opens in new tab ↗</span>
@@ -447,9 +444,7 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
           {/* Hints */}
           {!done && (
             <div>
-              <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">
-                Hints — each hint costs 5 points
-              </p>
+              <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Hints — each costs 5 points</p>
               <div className="space-y-2">
                 {task.hints.map((hint, i) => (
                   <div key={i}>
@@ -459,14 +454,11 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
                       </div>
                     ) : i === hintsShown ? (
                       <button onClick={() => setHints(h => h + 1)}
-                        className="text-xs font-mono px-3 py-1.5 rounded border border-slate-700 text-slate-500
-                                   hover:border-yellow-700 hover:text-yellow-400 transition-all w-full text-left">
+                        className="text-xs font-mono px-3 py-1.5 rounded border border-slate-700 text-slate-500 hover:border-yellow-700 hover:text-yellow-400 transition-all w-full text-left">
                         💡 Reveal Hint {i + 1} (−5 pts)
                       </button>
                     ) : (
-                      <div className="text-xs font-mono text-slate-700 px-3 py-1.5">
-                        💡 Hint {i + 1} — reveal earlier hints first
-                      </div>
+                      <div className="text-xs font-mono text-slate-700 px-3 py-1.5">💡 Hint {i+1} — reveal earlier hints first</div>
                     )}
                   </div>
                 ))}
@@ -474,44 +466,32 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
             </div>
           )}
 
-          {/* Answer area */}
+          {/* Answer */}
           {done ? (
             <div className="rounded border border-green-700 bg-green-950/20 p-4">
               <p className="text-xs font-mono text-green-400 mb-1">✓ Completed — +{progress?.score} points</p>
-              {progress?.answer && (
-                <p className="text-sm text-slate-300 font-mono">"{progress.answer}"</p>
-              )}
+              {progress?.answer && <p className="text-sm text-slate-300 font-mono">"{progress.answer}"</p>}
             </div>
           ) : grabbed && ismine ? (
             <div>
               <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Your Answer</p>
-
               {task.type === 'multiple_choice' && task.options && (
                 <div className="space-y-2">
                   {task.options.map(opt => (
                     <button key={opt} onClick={() => setAnswer(opt)}
-                      className={`w-full text-left px-3 py-2.5 rounded text-sm font-mono border transition-all
-                        ${answer === opt
-                          ? 'border-[#00AEEF] text-white bg-[#00AEEF]/10'
-                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}>
+                      className={"w-full text-left px-3 py-2.5 rounded text-sm font-mono border transition-all " +
+                        (answer === opt ? 'border-[#00AEEF] text-white bg-[#00AEEF]/10' : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200')}>
                       {answer === opt ? '▶ ' : '  '}{opt}
                     </button>
                   ))}
                 </div>
               )}
-
               {(task.type === 'free_text' || task.type === 'external_lookup') && (
-                <textarea
-                  value={answer}
-                  onChange={e => setAnswer(e.target.value)}
-                  placeholder={task.type === 'external_lookup'
-                    ? 'Record what you found in the external tool...'
-                    : 'Type your findings here...'}
-                  rows={4}
-                  className="w-full bg-[#0d1b2e] border rounded px-3 py-2 text-white font-mono text-sm
-                             focus:outline-none focus:border-[#00AEEF] resize-none transition-colors"
-                  style={{ borderColor: '#1B3A6B' }}
-                />
+                <textarea value={answer} onChange={e => setAnswer(e.target.value)}
+                  placeholder={task.type === 'external_lookup' ? 'Record what you found in the tool — tool name, key findings, numbers...' : 'Type your findings here...'}
+                  rows={5}
+                  className="w-full bg-[#0d1b2e] border rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-[#00AEEF] resize-none transition-colors"
+                  style={{ borderColor: '#1B3A6B' }} />
               )}
             </div>
           ) : grabbed && !ismine ? (
@@ -521,7 +501,7 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
           ) : null}
         </div>
 
-        {/* Panel footer */}
+        {/* Footer */}
         {!done && (
           <div className="p-4 border-t shrink-0 flex gap-3" style={{ borderColor: '#1B3A6B' }}>
             {status === 'available' ? (
@@ -533,8 +513,7 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
             ) : grabbed && ismine ? (
               <>
                 <button onClick={onRelease}
-                  className="px-4 py-3 rounded border border-slate-600 text-slate-400 text-sm font-mono
-                             hover:border-red-700 hover:text-red-400 transition-all">
+                  className="px-4 py-3 rounded border border-slate-600 text-slate-400 text-sm font-mono hover:border-red-700 hover:text-red-400 transition-all">
                   Release
                 </button>
                 <button onClick={handleSubmit} disabled={!answer.trim() || submitting}
@@ -544,9 +523,7 @@ function TaskPanel({ task, progress, myId, onClose, onGrab, onRelease, onSubmit 
                 </button>
               </>
             ) : (
-              <p className="text-sm font-mono text-slate-500 py-3">
-                Assigned to {progress?.member_name}
-              </p>
+              <p className="text-sm font-mono text-slate-500 py-3">Assigned to {progress?.member_name}</p>
             )}
           </div>
         )}
