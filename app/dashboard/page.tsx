@@ -11,7 +11,7 @@ type Theme = { bg: string; panel: string; panel2: string; border: string; accent
 
 function mkTheme(hc: boolean): Theme {
   return hc
-    ? { bg: '#000', panel: '#111', panel2: '#222', border: '#fff', accent: '#facc15', fg: '#000' }
+    ? { bg: '#f1f5f9', panel: '#e2e8f0', panel2: '#cbd5e1', border: '#1e293b', accent: '#1d4ed8', fg: '#ffffff' }
     : { bg: '#0d1b2e', panel: '#0f2340', panel2: '#162d52', border: '#1B3A6B', accent: '#00AEEF', fg: '#0d1b2e' }
 }
 
@@ -62,7 +62,8 @@ export default function DashboardPage() {
   const [progress, setProgress] = useState<TaskProgress[]>([])
   const [active, setActive]   = useState<Task | null>(null)
   const [timeLeft, setTimeLeft] = useState(SCENARIO.duration * 60)
-  const [teamTimer, setTeamTimer] = useState<{ startedAt: string | null; durationMins: number }>({ startedAt: null, durationMins: 20 })
+  const [teamTimer, setTeamTimer]   = useState<{ startedAt: string | null; durationMins: number }>({ startedAt: null, durationMins: 20 })
+  const [timerLoaded, setTimerLoaded] = useState(false)
 
   // Alert state
   const [alert, setAlert]         = useState<AlertEvent | null>(null)
@@ -253,7 +254,31 @@ export default function DashboardPage() {
 
   return (
     <ThemeCtx.Provider value={th}>
-      <div className="min-h-screen flex flex-col" style={{ backgroundColor: th.bg }}>
+      {hc && (
+        <style>{`
+          [data-hc] .text-white { color: #0f172a !important; }
+          [data-hc] .text-slate-200, [data-hc] .text-slate-300 { color: #1e293b !important; }
+          [data-hc] .text-slate-400 { color: #334155 !important; }
+          [data-hc] .text-slate-500 { color: #475569 !important; }
+          [data-hc] .text-slate-600 { color: #64748b !important; }
+          [data-hc] .text-slate-700 { color: #64748b !important; }
+          [data-hc] .text-green-400, [data-hc] .text-green-300 { color: #166534 !important; }
+          [data-hc] .text-yellow-200, [data-hc] .text-yellow-300, [data-hc] .text-yellow-400 { color: #713f12 !important; }
+          [data-hc] .text-yellow-500, [data-hc] .text-yellow-600 { color: #92400e !important; }
+          [data-hc] .text-red-300, [data-hc] .text-red-400 { color: #991b1b !important; }
+          [data-hc] .text-blue-300 { color: #1e40af !important; }
+          [data-hc] .text-purple-300 { color: #6b21a8 !important; }
+          [data-hc] .text-orange-300 { color: #c2410c !important; }
+          [data-hc] .border-slate-700 { border-color: #64748b !important; }
+          [data-hc] .border-slate-800 { border-color: #475569 !important; }
+          [data-hc] .bg-slate-800 { background-color: #cbd5e1 !important; }
+          [data-hc] .bg-green-950\/20 { background-color: #dcfce7 !important; }
+          [data-hc] .bg-yellow-950\/20, [data-hc] .bg-yellow-900\/20 { background-color: #fef9c3 !important; }
+          [data-hc] .bg-yellow-900\/30, [data-hc] .bg-yellow-900\/40 { background-color: #fef08a !important; }
+          [data-hc] .bg-red-950\/40 { background-color: #fee2e2 !important; }
+        `}</style>
+      )}
+      <div data-hc={hc ? '1' : undefined} className="min-h-screen flex flex-col" style={{ backgroundColor: th.bg }}>
 
         {/* Header */}
         <header className="flex items-center justify-between px-4 py-2 border-b shrink-0"
@@ -269,7 +294,9 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {teamTimer.startedAt ? (
+            {!timerLoaded ? (
+              <div className="font-mono font-bold text-lg text-slate-600">⏱ --:--</div>
+            ) : teamTimer.startedAt ? (
               <div className={"font-mono font-bold text-lg " + (timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white')}>
                 ⏱ {formatTime(timeLeft)}
               </div>
