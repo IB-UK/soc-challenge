@@ -22,4 +22,13 @@ export type Member = {
 export type TaskProgress = {
   id: string
   team_id: string
-  task_
+  task_id: string
+  member_id: string | null
+  member_name: string | null
+  status: 'available' | 'in_progress' | 'completed'
+  answer: string | null
+  score: number
+  hints_used: number
+  grabbed_at: string | null
+  completed_at: string | null
+}

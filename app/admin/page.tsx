@@ -10,9 +10,9 @@ type TeamSummary = {
 }
 
 export default function AdminPage() {
-  const [authed, setAuthed]   = useState(false)
-  const [pw, setPw]           = useState('')
-  const [teams, setTeams]     = useState<TeamSummary[]>([])
+  const [authed, setAuthed]     = useState(false)
+  const [pw, setPw]             = useState('')
+  const [teams, setTeams]       = useState<TeamSummary[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
 
   async function fetchAll() {
@@ -47,7 +47,9 @@ export default function AdminPage() {
         <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password"
           className="w-full bg-[#0d1b2e] border rounded px-3 py-2 text-white font-mono text-sm focus:outline-none"
           style={{ borderColor: '#1B3A6B' }} autoFocus />
-        <button className="w-full py-2 rounded font-bold text-sm" style={{ backgroundColor: '#00AEEF', color: '#0d1b2e' }}>Enter</button>
+        <button className="w-full py-2 rounded font-bold text-sm" style={{ backgroundColor: '#00AEEF', color: '#0d1b2e' }}>
+          Enter
+        </button>
       </form>
     </div>
   )
@@ -61,43 +63,42 @@ export default function AdminPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-white">Facilitator Dashboard</h1>
-            <p className="text-xs font-mono text-slate-400">Operation: Dark Harbour · {teams.length} active team{teams.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs font-mono text-slate-400">
+              Operation: Dark Harbour · {teams.length} team{teams.length !== 1 ? 's' : ''}
+            </p>
           </div>
-          <button onClick={fetchAll} className="text-xs font-mono px-3 py-1.5 rounded border border-slate-600 text-slate-400 hover:border-[#00AEEF] transition-all">
-            ↻ Refresh
+          <button onClick={fetchAll}
+            className="text-xs font-mono px-3 py-1.5 rounded border border-slate-600 text-slate-400 hover:border-[#00AEEF] transition-all">
+            Refresh
           </button>
         </div>
 
-        {/* Answer key */}
         <details className="mb-6 rounded-lg border" style={{ borderColor: '#1B3A6B' }}>
           <summary className="px-4 py-3 text-sm font-mono text-slate-400 cursor-pointer hover:text-white">
-            📋 Answer Key (click to expand)
+            Answer Key (click to expand)
           </summary>
           <div className="px-4 pb-4 space-y-1">
             {TASKS.map((t, i) => (
               <div key={t.id} className="text-xs font-mono">
                 <span className="text-slate-500">S{t.stage} Q{i+1}: </span>
-                <span className="text-slate-300">{t.title}</span>
+                <span className="text-slate-300">{t.title} — </span>
                 {t.answer
-                  ? <span className="text-green-400 ml-2">→ {t.answer}</span>
-                  : <span className="text-yellow-400 ml-2">→ Free text — {t.answerGuidance}</span>}
+                  ? <span className="text-green-400">{t.answer}</span>
+                  : <span className="text-yellow-400">Free text: {t.answerGuidance}</span>}
               </div>
             ))}
           </div>
         </details>
 
-        {/* Team cards */}
         {sortedTeams.length === 0
           ? <p className="text-center text-slate-500 font-mono py-16">No teams yet.</p>
           : sortedTeams.map((team, rank) => (
             <div key={team.id} className="mb-4 rounded-lg border overflow-hidden" style={{ borderColor: '#1B3A6B' }}>
-              {/* Team header */}
-              <button
-                onClick={() => setExpanded(expanded === team.id ? null : team.id)}
+              <button onClick={() => setExpanded(expanded === team.id ? null : team.id)}
                 className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#162d52] transition-all"
                 style={{ backgroundColor: '#0f2340' }}>
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">{rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : `#${rank+1}`}</span>
+                  <span className="text-lg">{rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : '#' + (rank+1)}</span>
                   <div>
                     <span className="font-bold text-white font-mono">{team.name}</span>
                     <span className="text-xs font-mono text-slate-400 ml-3">{team.members.join(', ')}</span>
@@ -114,7 +115,6 @@ export default function AdminPage() {
                 </div>
               </button>
 
-              {/* Task breakdown */}
               {expanded === team.id && (
                 <div className="border-t overflow-x-auto" style={{ borderColor: '#1B3A6B' }}>
                   <table className="w-full text-xs font-mono">
@@ -123,4 +123,48 @@ export default function AdminPage() {
                         <th className="text-left px-4 py-2 text-slate-400">Task</th>
                         <th className="text-left px-3 py-2 text-slate-400">Analyst</th>
                         <th className="text-center px-3 py-2 text-slate-400">Status</th>
-                        <th className="text-center px-
+                        <th className="text-center px-3 py-2 text-slate-400">Hints</th>
+                        <th className="text-center px-3 py-2 text-slate-400">Score</th>
+                        <th className="text-left px-3 py-2 text-slate-400">Answer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TASKS.map(task => {
+                        const tp = team.tasks.find(p => p.task_id === task.id)
+                        return (
+                          <tr key={task.id} className="border-t" style={{ borderColor: '#1B3A6B', backgroundColor: '#0f2340' }}>
+                            <td className="px-4 py-2 text-slate-300">{task.categoryIcon} {task.title}</td>
+                            <td className="px-3 py-2 text-slate-400">{tp?.member_name ?? '—'}</td>
+                            <td className="px-3 py-2 text-center">
+                              {!tp || tp.status === 'available'
+                                ? <span className="text-slate-600">—</span>
+                                : tp.status === 'in_progress'
+                                  ? <span className="text-yellow-400">In Progress</span>
+                                  : <span className="text-green-400">Done</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center text-slate-400">{tp?.hints_used ?? 0}</td>
+                            <td className="px-3 py-2 text-center font-bold" style={{ color: '#00AEEF' }}>
+                              {tp?.status === 'completed' ? tp.score : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-400 max-w-xs truncate">
+                              {tp?.answer ?? '—'}
+                              {task.type === 'multiple_choice' && tp?.answer && (
+                                <span className={"ml-2 " + (tp.answer === task.answer ? 'text-green-400' : 'text-red-400')}>
+                                  {tp.answer === task.answer ? '✓' : '✗'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
