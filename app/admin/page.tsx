@@ -64,7 +64,7 @@ export default function AdminPage() {
   const [newPin,       setNewPin]       = useState<Record<string, string>>({})
   const [confirm,      setConfirm]      = useState<{ label: string; action: () => Promise<void> } | null>(null)
   const [firedAlerts,  setFiredAlerts]  = useState<FiredAlert[]>([])
-  const [globalDur,    setGlobalDur]    = useState(45)
+  const [globalDur,    setGlobalDur]    = useState(20)
   const [alertScores,  setAlertScores]  = useState<Record<string, Record<string, number>>>({})
   const [customDurs,   setCustomDurs]   = useState<Record<number, number>>({})
 
@@ -76,7 +76,7 @@ export default function AdminPage() {
     ])
     if (!ts) return
     setTeams(ts.map(t => ({
-      id: t.id, name: t.name, pin: t.pin, started_at: t.started_at ?? null, duration_mins: t.duration_mins ?? 45,
+      id: t.id, name: t.name, pin: t.pin, started_at: t.started_at ?? null, duration_mins: t.duration_mins ?? 20,
       members: (ms ?? []).filter(m => m.team_id === t.id).map(m => ({ id: m.id, name: m.name })),
       tasks:   (ps ?? []).filter(p => p.team_id === t.id),
     })))
@@ -105,7 +105,12 @@ export default function AdminPage() {
   async function startAllTimers() {
     setBusy('start_all')
     const now = new Date().toISOString()
-    await supabase.from('soc_teams').update({ started_at: now, duration_mins: globalDur }).neq('id', '')
+    const { data: ids } = await supabase.from('soc_teams').select('id')
+    if (ids?.length) {
+      await supabase.from('soc_teams')
+        .update({ started_at: now, duration_mins: globalDur })
+        .in('id', ids.map(t => t.id))
+    }
     await fetchAll()
     setBusy(null)
   }
@@ -133,10 +138,10 @@ export default function AdminPage() {
 
   async function forceLogoutAll() {
     setBusy('force_logout')
-    await supabase.from('soc_task_progress').delete().neq('id', '')
-    await supabase.from('soc_members').delete().neq('id', '')
-    await supabase.from('soc_teams').delete().neq('id', '')
-    await supabase.from('soc_alerts').delete().neq('id', '')
+    await supabase.from('soc_task_progress').delete().not('id', 'is', null)
+    await supabase.from('soc_members').delete().not('id', 'is', null)
+    await supabase.from('soc_teams').delete().not('id', 'is', null)
+    await supabase.from('soc_alerts').delete().not('id', 'is', null)
     await Promise.all([fetchAll(), fetchAlerts()])
     setBusy(null)
     setConfirm(null)
@@ -147,7 +152,7 @@ export default function AdminPage() {
     // Boots all users (deletes members so their session breaks) but keeps
     // teams + scores visible on the leaderboard for the next group to see
     setBusy('force_logout')
-    await supabase.from('soc_members').delete().neq('id', '')
+    await supabase.from('soc_members').delete().not('id', 'is', null)
     await supabase.from('soc_teams').update({ started_at: null }).neq('id', '')
     await fetchAll()
     setBusy(null)
