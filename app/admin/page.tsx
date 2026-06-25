@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [confirm,      setConfirm]      = useState<{ label: string; action: () => Promise<void> } | null>(null)
   const [firedAlerts,  setFiredAlerts]  = useState<FiredAlert[]>([])
   const [alertScores,  setAlertScores]  = useState<Record<string, Record<string, number>>>({})
+  const [customDurs,   setCustomDurs]   = useState<Record<number, number>>({})
 
   async function fetchAll() {
     const [{ data: ts }, { data: ms }, { data: ps }] = await Promise.all([
@@ -112,7 +113,7 @@ export default function AdminPage() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  async function fireAlert(preset: typeof PREDEFINED_ALERTS[number]) {
+  async function fireAlert(preset: typeof PREDEFINED_ALERTS[number], idx: number, customDur?: number) {
     const key = `alert_${preset.title}`
     setBusy(key)
     await supabase.from('soc_alerts').insert({
@@ -121,7 +122,7 @@ export default function AdminPage() {
       options: preset.options,
       correct_answer: preset.correct_answer,
       bonus_points: preset.bonus_points,
-      duration_secs: preset.duration_secs,
+      duration_secs: customDur ?? customDurs[idx] ?? preset.duration_secs,
       fired_at: new Date().toISOString(),
     })
     await fetchAlerts()
@@ -222,6 +223,7 @@ export default function AdminPage() {
               const responses = lastFired ? alertScores[lastFired.id] ?? {} : {}
               const responded = Object.keys(responses).length
               const correct   = Object.values(responses).filter(s => s > 0).length
+              const dur = customDurs[i] ?? preset.duration_secs
               return (
                 <div key={i} className="rounded-lg border border-red-900 p-4 flex flex-col gap-3"
                   style={{ backgroundColor: '#0f2340' }}>
@@ -232,7 +234,16 @@ export default function AdminPage() {
                   <div className="flex items-center gap-3 text-xs font-mono text-slate-500">
                     <span className="text-green-400 font-bold">+{preset.bonus_points}pts</span>
                     <span>·</span>
-                    <span>{preset.duration_secs}s window</span>
+                    <label className="flex items-center gap-1.5">
+                      <span>Window:</span>
+                      <input
+                        type="number" min={10} max={300} step={5}
+                        value={dur}
+                        onChange={e => setCustomDurs(d => ({ ...d, [i]: Math.max(10, Math.min(300, Number(e.target.value))) }))}
+                        className="w-16 bg-[#0d1b2e] border border-slate-700 rounded px-1.5 py-0.5 text-white font-mono text-xs focus:outline-none focus:border-red-500 text-center"
+                      />
+                      <span>s</span>
+                    </label>
                   </div>
                   {lastFired && (
                     <div className="text-xs font-mono text-slate-500 border-t border-slate-800 pt-2">
@@ -241,7 +252,7 @@ export default function AdminPage() {
                     </div>
                   )}
                   <button
-                    onClick={() => fireAlert(preset)}
+                    onClick={() => fireAlert(preset, i)}
                     disabled={busy === `alert_${preset.title}`}
                     className="w-full py-2 rounded text-xs font-mono font-bold transition-all disabled:opacity-40 hover:opacity-90"
                     style={{ backgroundColor: '#dc2626', color: '#fff' }}>

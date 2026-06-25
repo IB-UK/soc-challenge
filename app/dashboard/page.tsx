@@ -208,7 +208,10 @@ export default function DashboardPage() {
   async function submitAlertAnswer(a: AlertEvent, answer: string) {
     if (!team) return
     const correct = answer === a.correct_answer
-    const score = correct ? a.bonus_points : 0
+    // Score scales with how fast they answered
+    const elapsed = (Date.now() - new Date(a.fired_at).getTime()) / 1000
+    const remaining = Math.max(0, a.duration_secs - elapsed)
+    const score = correct ? Math.max(1, Math.ceil(a.bonus_points * remaining / a.duration_secs)) : 0
     await supabase.from('soc_alert_responses').upsert(
       { alert_id: a.id, team_id: team.id, answer, score, answered_at: new Date().toISOString() },
       { onConflict: 'alert_id,team_id' }
@@ -703,7 +706,9 @@ function AlertPopup({ alert, answer, timeLeft, onAnswer, onDismiss }: {
                   <div className={"text-2xl font-bold font-mono " + (timeLeft <= 10 ? 'text-red-300 animate-pulse' : 'text-white')}>
                     {timeLeft}s
                   </div>
-                  <div className="text-xs text-red-300 font-mono">+{alert.bonus_points} pts</div>
+                  <div className={"text-lg font-bold font-mono " + (timeLeft <= 10 ? 'text-red-300' : 'text-yellow-300')}>
+                    +{Math.max(1, Math.ceil(alert.bonus_points * timeLeft / alert.duration_secs))} pts
+                  </div>
                 </>
               ) : (
                 <div className={"text-xl font-bold font-mono " + (correct ? 'text-green-400' : 'text-red-400')}>
