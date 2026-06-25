@@ -62,7 +62,13 @@ export default function DashboardPage() {
   const [progress, setProgress] = useState<TaskProgress[]>([])
   const [active, setActive]   = useState<Task | null>(null)
   const [timeLeft, setTimeLeft] = useState(SCENARIO.duration * 60)
-  const [startTs]               = useState(Date.now())
+  const [startTs] = useState(() => {
+    const stored = typeof window !== 'undefined' && localStorage.getItem('soc_start_ts')
+    if (stored) return Number(stored)
+    const now = Date.now()
+    localStorage.setItem('soc_start_ts', String(now))
+    return now
+  })
 
   // Alert state
   const [alert, setAlert]         = useState<AlertEvent | null>(null)
