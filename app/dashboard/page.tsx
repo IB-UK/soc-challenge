@@ -88,17 +88,30 @@ export default function DashboardPage() {
     const memberId   = localStorage.getItem('soc_member_id')
     const memberName = localStorage.getItem('soc_member_name')
     if (!teamId || !memberId) { router.push('/'); return }
+    // Set team immediately from localStorage so component renders while fetch is in-flight
+    setTeam({ id: teamId, name: teamName ?? '', pin: '', started_at: null, duration_mins: 20, created_at: '' })
     setMember({ id: memberId, team_id: teamId, name: memberName ?? '', created_at: '' })
-    // Fetch full team record for timer
+
+    // Fetch full team record to get started_at and duration_mins
+    const timerFallback = setTimeout(() => setTimerLoaded(true), 4000)
     supabase.from('soc_teams').select('*').eq('id', teamId).single()
       .then(({ data }) => {
+        clearTimeout(timerFallback)
         if (data) {
           setTeam(data)
-          setTeamTimer({ startedAt: data.started_at, durationMins: data.duration_mins })
-        } else {
-          setTeam({ id: teamId, name: teamName ?? '', pin: '', started_at: null, duration_mins: SCENARIO.duration, created_at: '' })
+          const startedAt    = data.started_at    ?? null
+          const durationMins = data.duration_mins ?? 20
+          setTeamTimer({ startedAt, durationMins })
+          if (startedAt) {
+            const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+            setTimeLeft(Math.max(0, durationMins * 60 - elapsed))
+          } else {
+            setTimeLeft(durationMins * 60)
+          }
         }
+        setTimerLoaded(true)
       })
+      .catch(() => { clearTimeout(timerFallback); setTimerLoaded(true) })
 
     const loadProgress = () =>
       supabase.from('soc_task_progress').select('*').eq('team_id', teamId)
