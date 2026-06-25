@@ -9,6 +9,8 @@ export type Team = {
   id: string
   name: string
   pin: string
+  started_at: string | null
+  duration_mins: number
   created_at: string
 }
 

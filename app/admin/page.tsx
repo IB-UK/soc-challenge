@@ -5,7 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { TASKS } from '@/lib/challenge-data'
 
 type TeamSummary = {
-  id: string; name: string; pin: string; members: { id: string; name: string }[]
+  id: string; name: string; pin: string
+  started_at: string | null; duration_mins: number
+  members: { id: string; name: string }[]
   tasks: { task_id: string; member_name: string | null; status: string; answer: string | null; score: number; hints_used: number }[]
 }
 
@@ -62,18 +64,19 @@ export default function AdminPage() {
   const [newPin,       setNewPin]       = useState<Record<string, string>>({})
   const [confirm,      setConfirm]      = useState<{ label: string; action: () => Promise<void> } | null>(null)
   const [firedAlerts,  setFiredAlerts]  = useState<FiredAlert[]>([])
+  const [globalDur,    setGlobalDur]    = useState(45)
   const [alertScores,  setAlertScores]  = useState<Record<string, Record<string, number>>>({})
   const [customDurs,   setCustomDurs]   = useState<Record<number, number>>({})
 
   async function fetchAll() {
     const [{ data: ts }, { data: ms }, { data: ps }] = await Promise.all([
-      supabase.from('soc_teams').select('id, name, pin').order('created_at'),
+      supabase.from('soc_teams').select('id, name, pin, started_at, duration_mins').order('created_at'),
       supabase.from('soc_members').select('id, team_id, name'),
       supabase.from('soc_task_progress').select('team_id, task_id, member_name, status, answer, score, hints_used'),
     ])
     if (!ts) return
     setTeams(ts.map(t => ({
-      id: t.id, name: t.name, pin: t.pin,
+      id: t.id, name: t.name, pin: t.pin, started_at: t.started_at ?? null, duration_mins: t.duration_mins ?? 45,
       members: (ms ?? []).filter(m => m.team_id === t.id).map(m => ({ id: m.id, name: m.name })),
       tasks:   (ps ?? []).filter(p => p.team_id === t.id),
     })))
@@ -95,6 +98,49 @@ export default function AdminPage() {
       }
       setAlertScores(map)
     }
+  }
+
+  // ── Session control actions ──────────────────────────────────────────────
+
+  async function startAllTimers() {
+    setBusy('start_all')
+    const now = new Date().toISOString()
+    await supabase.from('soc_teams').update({ started_at: now, duration_mins: globalDur }).neq('id', '')
+    await fetchAll()
+    setBusy(null)
+  }
+
+  async function startTeamTimer(teamId: string) {
+    setBusy(`start_${teamId}`)
+    await supabase.from('soc_teams')
+      .update({ started_at: new Date().toISOString() })
+      .eq('id', teamId)
+    await fetchAll()
+    setBusy(null)
+  }
+
+  async function resetTeamTimer(teamId: string) {
+    setBusy(`timer_reset_${teamId}`)
+    await supabase.from('soc_teams').update({ started_at: null }).eq('id', teamId)
+    await fetchAll()
+    setBusy(null)
+  }
+
+  async function setTeamDuration(teamId: string, mins: number) {
+    await supabase.from('soc_teams').update({ duration_mins: mins }).eq('id', teamId)
+    await fetchAll()
+  }
+
+  async function forceLogoutAll() {
+    setBusy('force_logout')
+    await supabase.from('soc_task_progress').delete().neq('id', '')
+    await supabase.from('soc_members').delete().neq('id', '')
+    await supabase.from('soc_teams').delete().neq('id', '')
+    await supabase.from('soc_alerts').delete().neq('id', '')
+    await Promise.all([fetchAll(), fetchAlerts()])
+    setBusy(null)
+    setConfirm(null)
+    setExpanded(null)
   }
 
   useEffect(() => {
@@ -206,6 +252,41 @@ export default function AdminPage() {
             className="text-xs font-mono px-3 py-1.5 rounded border border-slate-600 text-slate-400 hover:border-[#00AEEF] transition-all">
             ↻ Refresh
           </button>
+        </div>
+
+        {/* ── Session Controls ──────────────────────────────────────────── */}
+        <div className="mb-6 rounded-lg border overflow-hidden" style={{ borderColor: '#1B3A6B' }}>
+          <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: '#0f2340' }}>
+            <div>
+              <h2 className="text-sm font-bold text-white">Session Controls</h2>
+              <p className="text-xs text-slate-400 font-mono">Start timers, configure duration, reset for new group</p>
+            </div>
+          </div>
+          <div className="p-4 flex flex-wrap items-center gap-4" style={{ backgroundColor: '#0d1b2e' }}>
+            {/* Global duration + start all */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-slate-400">Default duration:</span>
+              <input type="number" min={5} max={120} step={5} value={globalDur}
+                onChange={e => setGlobalDur(Math.max(5, Math.min(120, Number(e.target.value))))}
+                className="w-16 bg-[#0f2340] border border-slate-700 rounded px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-[#00AEEF] text-center" />
+              <span className="text-xs font-mono text-slate-400">mins</span>
+            </div>
+            <button onClick={startAllTimers} disabled={busy === 'start_all'}
+              className="text-xs font-mono px-4 py-2 rounded border font-bold transition-all disabled:opacity-40"
+              style={{ backgroundColor: '#00AEEF', color: '#0d1b2e', borderColor: '#00AEEF' }}>
+              {busy === 'start_all' ? '...' : '▶ Start All Timers'}
+            </button>
+            <div className="h-6 border-l border-slate-700" />
+            <button
+              onClick={() => setConfirm({
+                label: 'Force logout ALL teams? This permanently deletes all teams, members, progress and alerts.',
+                action: forceLogoutAll,
+              })}
+              disabled={busy === 'force_logout'}
+              className="text-xs font-mono px-4 py-2 rounded border border-red-800 text-red-400 hover:border-red-500 hover:text-red-300 transition-all disabled:opacity-40">
+              {busy === 'force_logout' ? '...' : '⚠️ Force Logout All'}
+            </button>
+          </div>
         </div>
 
         {/* ── Fire Live Alert ─────────────────────────────────────────────── */}
@@ -384,6 +465,38 @@ export default function AdminPage() {
                       className="text-xs font-mono px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-[#00AEEF] hover:text-white transition-all disabled:opacity-40">
                       {busy === `pin_${team.id}` ? 'Saving...' : 'Save'}
                     </button>
+                  </div>
+
+                  {/* Timer controls */}
+                  <div className="px-4 py-3 border-b flex flex-wrap items-center gap-3" style={{ borderColor: '#1B3A6B' }}>
+                    <p className="text-xs font-mono text-slate-500 uppercase tracking-widest shrink-0">Timer</p>
+                    {team.started_at ? (
+                      <span className="text-xs font-mono text-green-400 bg-green-900/20 border border-green-800 rounded px-2 py-1">
+                        ▶ Running — {Math.max(0, Math.ceil(team.duration_mins - (Date.now() - new Date(team.started_at).getTime()) / 60000))}m left
+                      </span>
+                    ) : (
+                      <span className="text-xs font-mono text-slate-500 bg-slate-800 rounded px-2 py-1">Not started</span>
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs font-mono text-slate-400">
+                      Duration:
+                      <input type="number" min={5} max={120} step={5}
+                        defaultValue={team.duration_mins}
+                        onBlur={e => setTeamDuration(team.id, Math.max(5, Math.min(120, Number(e.target.value))))}
+                        className="w-16 bg-[#0d1b2e] border border-slate-700 rounded px-1.5 py-0.5 text-white font-mono text-xs focus:outline-none focus:border-[#00AEEF] text-center" />
+                      mins
+                    </label>
+                    {!team.started_at ? (
+                      <button onClick={() => startTeamTimer(team.id)} disabled={busy === `start_${team.id}`}
+                        className="text-xs font-mono px-3 py-1.5 rounded border font-bold transition-all disabled:opacity-40"
+                        style={{ backgroundColor: '#00AEEF', color: '#0d1b2e', borderColor: '#00AEEF' }}>
+                        {busy === `start_${team.id}` ? '...' : '▶ Start'}
+                      </button>
+                    ) : (
+                      <button onClick={() => resetTeamTimer(team.id)} disabled={busy === `timer_reset_${team.id}`}
+                        className="text-xs font-mono px-3 py-1.5 rounded border border-slate-600 text-slate-400 hover:border-yellow-600 hover:text-yellow-400 transition-all disabled:opacity-40">
+                        {busy === `timer_reset_${team.id}` ? '...' : '↺ Reset Timer'}
+                      </button>
+                    )}
                   </div>
 
                   {/* Task table */}

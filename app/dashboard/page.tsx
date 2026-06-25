@@ -93,8 +93,17 @@ export default function DashboardPage() {
     const memberId   = localStorage.getItem('soc_member_id')
     const memberName = localStorage.getItem('soc_member_name')
     if (!teamId || !memberId) { router.push('/'); return }
-    setTeam({ id: teamId, name: teamName ?? '', pin: '', created_at: '' })
     setMember({ id: memberId, team_id: teamId, name: memberName ?? '', created_at: '' })
+    // Fetch full team record for timer
+    supabase.from('soc_teams').select('*').eq('id', teamId).single()
+      .then(({ data }) => {
+        if (data) {
+          setTeam(data)
+          setTeamTimer({ startedAt: data.started_at, durationMins: data.duration_mins })
+        } else {
+          setTeam({ id: teamId, name: teamName ?? '', pin: '', started_at: null, duration_mins: SCENARIO.duration, created_at: '' })
+        }
+      })
 
     const loadProgress = () =>
       supabase.from('soc_task_progress').select('*').eq('team_id', teamId)
@@ -133,6 +142,12 @@ export default function DashboardPage() {
         supabase.from('soc_members').select('*').eq('team_id', teamId)
           .then(({ data }) => { if (data) setMembers(data) })
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'soc_teams',
+          filter: `id=eq.${teamId}` }, (payload) => {
+        const t = payload.new as { started_at: string | null; duration_mins: number; name: string; pin: string; id: string; created_at: string }
+        setTeam(prev => prev ? { ...prev, ...t } : prev)
+        setTeamTimer({ startedAt: t.started_at, durationMins: t.duration_mins })
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'soc_alerts' },
         (payload) => {
           const a = payload.new as AlertEvent
@@ -144,12 +159,18 @@ export default function DashboardPage() {
     return () => { supabase.removeChannel(ch) }
   }, [router])
 
-  // Main timer
+  // Main timer — driven by team's started_at from Supabase
   useEffect(() => {
-    const iv = setInterval(() =>
-      setTimeLeft(Math.max(0, SCENARIO.duration * 60 - Math.floor((Date.now() - startTs) / 1000))), 1000)
+    const iv = setInterval(() => {
+      if (!teamTimer.startedAt) {
+        setTimeLeft(teamTimer.durationMins * 60)
+        return
+      }
+      const elapsed = Math.floor((Date.now() - new Date(teamTimer.startedAt).getTime()) / 1000)
+      setTimeLeft(Math.max(0, teamTimer.durationMins * 60 - elapsed))
+    }, 1000)
     return () => clearInterval(iv)
-  }, [startTs])
+  }, [teamTimer])
 
   // Alert countdown
   useEffect(() => {
@@ -254,9 +275,15 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className={"font-mono font-bold text-lg " + (timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white')}>
-              ⏱ {formatTime(timeLeft)}
-            </div>
+            {teamTimer.startedAt ? (
+              <div className={"font-mono font-bold text-lg " + (timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white')}>
+                ⏱ {formatTime(timeLeft)}
+              </div>
+            ) : (
+              <div className="font-mono text-sm text-slate-500 border border-slate-700 rounded px-3 py-1.5">
+                ⏱ Waiting to start…
+              </div>
+            )}
             <button onClick={toggleHC} title={hc ? 'High contrast ON' : 'High contrast OFF'}
               className={"text-xs font-mono px-2 py-1.5 rounded border transition-all " +
                 (hc ? 'border-yellow-400 text-yellow-300 bg-yellow-900/20'
