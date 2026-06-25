@@ -111,7 +111,7 @@ export default function DashboardPage() {
         }
         setTimerLoaded(true)
       })
-      .catch(() => { clearTimeout(timerFallback); setTimerLoaded(true) })
+
 
     const loadProgress = () =>
       supabase.from('soc_task_progress').select('*').eq('team_id', teamId)
