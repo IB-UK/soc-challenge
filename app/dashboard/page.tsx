@@ -192,6 +192,7 @@ export default function DashboardPage() {
     return completedInStage(stage - 1) >= STAGE_UNLOCK_REQUIREMENTS[stage as 2 | 3]
   }
 
+  const timeUp    = timerLoaded && !!teamTimer.startedAt && timeLeft === 0
   const teamScore = progress.reduce((s, p) => s + (p.score ?? 0), 0)
   const completedCount = progress.filter(p => p.status === 'completed' && !p.task_id.startsWith('alert_')).length
 
@@ -296,6 +297,8 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             {!timerLoaded ? (
               <div className="font-mono font-bold text-lg text-slate-600">⏱ --:--</div>
+            ) : timeUp ? (
+              <div className="font-mono font-bold text-lg text-red-500">⏱ 00:00</div>
             ) : teamTimer.startedAt ? (
               <div className={"font-mono font-bold text-lg " + (timeLeft < 120 ? 'text-red-400 animate-pulse' : 'text-white')}>
                 ⏱ {formatTime(timeLeft)}
@@ -383,8 +386,8 @@ export default function DashboardPage() {
 
           {/* Task grid */}
           <main className="flex-1 overflow-y-auto p-4 relative">
-            {/* Waiting overlay — blocks tasks until facilitator starts the timer */}
-            {!teamTimer.startedAt && (
+            {/* Waiting overlay — blocks tasks until started */}
+            {timerLoaded && !teamTimer.startedAt && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4"
                 style={{ backgroundColor: 'rgba(13,27,46,0.92)', backdropFilter: 'blur(2px)' }}>
                 <div className="text-4xl animate-pulse">⏳</div>
@@ -396,6 +399,29 @@ export default function DashboardPage() {
                   <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
                   <span className="text-xs font-mono text-slate-400">Team: <span className="text-white font-bold">{team?.name}</span></span>
                 </div>
+              </div>
+            )}
+
+            {/* Time's up overlay — locks tasks but keeps them visible */}
+            {timeUp && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4"
+                style={{ backgroundColor: 'rgba(30,0,0,0.88)', backdropFilter: 'blur(3px)' }}>
+                <div className="text-5xl">🔒</div>
+                <div className="text-center">
+                  <p className="text-red-400 font-bold text-2xl font-mono tracking-widest">TIME'S UP</p>
+                  <p className="text-slate-400 text-sm font-mono mt-2">The session has ended — no more submissions</p>
+                </div>
+                <div className="rounded-lg border border-slate-700 px-6 py-3 text-center"
+                  style={{ backgroundColor: 'rgba(15,35,64,0.8)' }}>
+                  <p className="text-xs font-mono text-slate-500 mb-1">Final Score</p>
+                  <p className="text-3xl font-bold font-mono" style={{ color: '#00AEEF' }}>{teamScore} pts</p>
+                  <p className="text-xs font-mono text-slate-500 mt-1">{completedCount}/{TASKS.length} tasks completed</p>
+                </div>
+                <button onClick={() => router.push('/leaderboard')}
+                  className="text-sm font-mono font-bold px-6 py-2.5 rounded transition-all"
+                  style={{ backgroundColor: '#00AEEF', color: '#0d1b2e' }}>
+                  View Leaderboard →
+                </button>
               </div>
             )}
             {([1, 2, 3] as const).map(stage => {
