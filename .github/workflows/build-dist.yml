@@ -1,0 +1,97 @@
+name: Build → dist branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Assemble dist
+        run: |
+          # Standalone server + its bundled node_modules
+          cp -r .next/standalone dist
+
+          # Static assets must live alongside the server
+          cp -r .next/static dist/.next/static
+
+          # Public folder (logo, favicons, etc.)
+          cp -r public dist/public
+
+          # Minimal package.json so `npm start` works on the server
+          cat > dist/package.json << 'EOF'
+          {
+            "name": "soc-challenge",
+            "version": "1.0.0",
+            "scripts": {
+              "start": "node server.js"
+            }
+          }
+          EOF
+
+          # Example env file — rename to .env on the server and fill in values
+          cat > dist/.env.example << 'EOF'
+          NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+          PORT=3000
+          HOSTNAME=0.0.0.0
+          EOF
+
+          # README for the server operator
+          cat > dist/README.md << 'EOF'
+          # SOC Challenge — Production Server
+
+          ## Requirements
+          - Node.js 20+
+          - (Recommended) PM2: `npm install -g pm2`
+
+          ## First-time setup
+          1. Copy `.env.example` to `.env` and fill in your Supabase credentials
+          2. Start the server:
+             ```
+             node server.js
+             # or with PM2:
+             pm2 start server.js --name soc-challenge
+             ```
+          3. The app listens on PORT (default 3000).
+             Point nginx / Apache at that port.
+
+          ## Updating
+          ```bash
+          git pull origin dist
+          pm2 restart soc-challenge
+          ```
+          EOF
+
+      - name: Push to dist branch
+        run: |
+          cd dist
+          git init
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b dist
+          git add -A
+          git commit -m "dist: $(date -u '+%Y-%m-%d %H:%M UTC') — ${{ github.sha }}"
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git push -f origin dist
