@@ -43,3 +43,5 @@ jobs:
           git commit -m "dist: $(date -u '+%Y-%m-%d %H:%M UTC')"
           git remote add origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git push -f origin dist
+      - name: Trigger Plesk Deployment
+        run: curl -X POST "${{ secrets.PLESK_WEBHOOK_URL }}"
