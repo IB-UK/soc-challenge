@@ -30,27 +30,11 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Assemble dist folder
-        run: |
-          cp -r .next/standalone dist
-          cp -r .next/static dist/.next/static
-          cp -r public dist/public
-
-      - name: Write helper files
-        run: |
-          python3 -c "
-          import json
-          pkg = {'name': 'soc-challenge', 'version': '1.0.0', 'scripts': {'start': 'node server.js'}}
-          open('dist/package.json', 'w').write(json.dumps(pkg, indent=2))
-          open('dist/.env.example', 'w').write('NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key\nPORT=3000\nHOSTNAME=0.0.0.0\n')
-          print('done')
-          "
-
       - name: Push to dist branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd dist
+          cd out
           git init
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
